@@ -29,31 +29,40 @@ This ecosystem consists of four specialized applications that work together to p
 - **Technology**: Rust, Secure logging
 - **Features**: Immutable audit trails, forensic analysis, industrial compliance
 
-## � Real-Time Semantic Query Engine
+## 📊 Real-Time Semantic Query Engine
 
 The cyber-monitor features a high-performance semantic query engine that enables real-time filtering of binary 32-byte atoms using natural language commands. This system performs zero-copy binary filtering directly on memory-mapped data structures for maximum efficiency.
 
 ### Query Capabilities
 
-Filter industrial monitoring data with semantic commands:
+Filter industrial monitoring data with natural language commands:
 
 ```bash
-# Find high-consumption nodes
+# Technical queries
 energy > 5
-
-# Isolate traffic from a specific sensor  
 node = 42
-
-# Complex industrial anomaly detection
 type = 1 and energy > 10
-``
+
+# Natural language queries
+high power              # Interpreted as: energy > 80
+sensor 42              # Interpreted as: node = 42
+hungry machine          # Interpreted as: energy > 80 and node = (any)
+low consumption         # Interpreted as: energy < 20
+
+# Multilingual support (Slovak)
+spotreba > 10         # Interpreted as: energy > 10
+senzor 42              # Interpreted as: node = 42
+vysoke spotreba        # Interpreted as: energy > 80
+```
 
 ### Performance Features
 
 - **Zero-copy binary filtering** on 8th-byte energy offset
 - **Sub-microsecond query execution** on 1000+ stored atoms
+- **Natural Language Processing** with synonym recognition
 - **TUI-integrated command line** with instant visual feedback
-- **Natural language parsing** for industrial operators
+- **Multilingual support** for English and Slovak operators
+- **Smart threshold mapping** (high=80, low=20, efficient=20)
 
 ## �� Quick Start
 
@@ -75,9 +84,9 @@ cd sams-ghost-node && cargo run --release
 # Semantic Logic Controller
 cd sams-logic-gate && cargo run --release --features open-source
 
-# Cyber-Monitor (Dashboard with Semantic Search)
+# Cyber-Monitor (Dashboard with Natural Language Search)
 cd cyber-monitor && cargo run --release
-# Press '/' to enter search mode, then type: energy > 5
+# Press '/' to enter search mode, then type: high power or sensor 42
 
 # Black-Box Auditor
 cd sams-blackbox && cargo run --release

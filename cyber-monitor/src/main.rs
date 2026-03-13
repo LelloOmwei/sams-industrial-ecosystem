@@ -18,6 +18,7 @@ use sysinfo::System;
 use std::{io, time::Duration, collections::VecDeque, net::UdpSocket};
 use chrono::Local;
 use rand::Rng;
+use regex;
 
 // Shared data structure matching ghost-node (32-byte aligned)
 #[repr(C, packed)]
@@ -38,7 +39,7 @@ const JSON_ENERGY_PER_ATOM: u64 = 180; // microjoules
 const ATOMS_PER_SECOND: u64 = 100;
 const MAX_STORED_ATOMS: usize = 1000;
 
-// Query system
+// Query system with Natural Language support
 #[derive(Debug, Clone)]
 enum QueryFilter {
     EnergyGreaterThan(u32),
@@ -50,17 +51,79 @@ enum QueryFilter {
 #[derive(Debug, Clone)]
 struct Query {
     filters: Vec<QueryFilter>,
+    original_input: String,
+    normalized_input: String,
+}
+
+// Natural Language normalization
+fn normalize_query(input: &str) -> String {
+    let mut normalized = input.to_lowercase();
+    
+    // Energy synonyms mapping
+    let energy_terms = [
+        ("power", "energy"),
+        ("consumption", "energy"),
+        ("usage", "energy"),
+        ("hungry", "energy"),
+        ("expensive", "energy"),
+        ("spotreba", "energy"), // Slovak
+        ("energia", "energy"), // Slovak
+    ];
+    
+    // Node synonyms mapping
+    let node_terms = [
+        ("sensor", "node"),
+        ("machine", "node"),
+        ("unit", "node"),
+        ("source", "node"),
+        ("id", "node"),
+        ("senzor", "node"), // Slovak
+        ("zdroj", "node"), // Slovak
+    ];
+    
+    // High/Low threshold mapping
+    let threshold_terms = [
+        ("high", "80"),
+        ("very high", "90"),
+        ("low", "20"),
+        ("efficient", "20"),
+        ("very low", "10"),
+        ("nizke", "20"), // Slovak
+        ("vysoke", "80"), // Slovak
+    ];
+    
+    // Apply energy term replacements
+    for (synonym, target) in &energy_terms {
+        normalized = normalized.replace(synonym, target);
+    }
+    
+    // Apply node term replacements
+    for (synonym, target) in &node_terms {
+        normalized = normalized.replace(synonym, target);
+    }
+    
+    // Apply threshold replacements (with word boundaries)
+    for (synonym, target) in &threshold_terms {
+        let pattern = format!(r"\b{}\b", regex::escape(synonym));
+        if let Ok(re) = regex::Regex::new(&pattern) {
+            normalized = re.replace_all(&normalized, *target).to_string();
+        }
+    }
+    
+    normalized
 }
 
 impl Query {
     fn parse(input: &str) -> Result<Self, String> {
         let mut filters = Vec::new();
-        let parts: Vec<&str> = input.split_whitespace().collect();
+        let original_input = input.to_string();
+        let normalized = normalize_query(input);
+        let parts: Vec<&str> = normalized.split_whitespace().collect();
         
         let mut i = 0;
         while i < parts.len() {
             match parts[i] {
-                "energy" | "consumption" if i + 2 < parts.len() => {
+                "energy" | "consumption" | "power" | "usage" if i + 2 < parts.len() => {
                     match parts[i + 1] {
                         ">" | ">=" => {
                             if let Ok(value) = parts[i + 2].parse::<u32>() {
@@ -76,7 +139,7 @@ impl Query {
                     }
                     i += 3;
                 }
-                "node" if i + 2 < parts.len() => {
+                "node" | "sensor" | "machine" | "unit" | "source" | "id" if i + 2 < parts.len() => {
                     if parts[i + 1] == "=" {
                         if let Ok(value) = parts[i + 2].parse::<u16>() {
                             filters.push(QueryFilter::NodeId(value));
@@ -96,7 +159,11 @@ impl Query {
             }
         }
         
-        Ok(Query { filters })
+        Ok(Query { 
+            filters, 
+            original_input,
+            normalized_input: normalized,
+        })
     }
     
     fn matches(&self, atom: &SemanticAtom) -> bool {
@@ -345,7 +412,10 @@ impl App {
             Ok(query) => {
                 self.current_query = Some(query.clone());
                 self.update_query_matches(&query);
-                self.add_log(&format!("[QUERY] Found {} matches for '{}'", self.query_matches.len(), self.query_input), "OK");
+                if query.original_input != query.normalized_input {
+                    self.add_log(&format!("[QUERY] NL interpreted as: '{}'", query.normalized_input), "OK");
+                }
+                self.add_log(&format!("[QUERY] Found {} matches for '{}'", self.query_matches.len(), query.original_input), "OK");
             }
             Err(e) => {
                 self.add_log(&format!("[QUERY] Parse error: {}", e), "WARN");
@@ -663,8 +733,12 @@ fn render_ui(f: &mut Frame, app: &App, size: Rect, encryption_blink: bool) {
 fn render_search_bar(f: &mut Frame, app: &App, area: Rect) {
     let search_text = if app.query_mode {
         format!("Search: {}_", app.query_input)
-    } else if app.current_query.is_some() {
-        format!("Filter active: '{}' (Esc to clear)", app.query_input)
+    } else if let Some(ref query) = app.current_query {
+        if query.original_input != query.normalized_input {
+            format!("Filter: '{}' -> '{}'", query.original_input, query.normalized_input)
+        } else {
+            format!("Filter active: '{}' (Esc to clear)", query.original_input)
+        }
     } else {
         "Press '/' to search atoms".to_string()
     };
@@ -673,7 +747,7 @@ fn render_search_bar(f: &mut Frame, app: &App, area: Rect) {
     let search_widget = Paragraph::new(search_text)
         .style(Style::default().fg(search_color))
         .block(Block::default()
-            .title(" SEMANTIC QUERY ")
+            .title(" SEMANTIC QUERY (NL) ")
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Yellow)));
     
