@@ -19,16 +19,15 @@ use std::{io, time::Duration, collections::VecDeque, net::UdpSocket};
 use chrono::Local;
 use rand::Rng;
 
-// Shared data structure matching ghost-node
-#[repr(C)]
-#[derive(Debug, Clone)]
+// Shared data structure matching ghost-node (32-byte aligned)
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy)]
 struct SemanticAtom {
-    timestamp: u64,
-    atom_id: u32,
-    payload: [u8; 24],
-    trust_pqc: bool,
-    energy_cost: u32,
-    source_node: u16,
+    timestamp: u32,        // Bytes 0-3   (4 bytes) - Unix timestamp
+    node_id: u16,         // Bytes 4-5   (2 bytes) - Source node identifier
+    atom_type: u16,       // Bytes 6-7   (2 bytes) - Type of atom/data
+    energy_micro_j: u32,  // Bytes 8-11  (4 bytes) - Energy cost in microjoules
+    payload: [u8; 20],    // Bytes 12-31 (20 bytes) - Data payload
 }
 
 // Energy analytics constants
@@ -37,6 +36,80 @@ const JSON_ATOM_SIZE: u64 = 512; // bytes
 const SAMS_ENERGY_PER_ATOM: u64 = 12; // microjoules
 const JSON_ENERGY_PER_ATOM: u64 = 180; // microjoules
 const ATOMS_PER_SECOND: u64 = 100;
+const MAX_STORED_ATOMS: usize = 1000;
+
+// Query system
+#[derive(Debug, Clone)]
+enum QueryFilter {
+    EnergyGreaterThan(u32),
+    EnergyLessThan(u32),
+    NodeId(u16),
+    AtomType(u16),
+}
+
+#[derive(Debug, Clone)]
+struct Query {
+    filters: Vec<QueryFilter>,
+}
+
+impl Query {
+    fn parse(input: &str) -> Result<Self, String> {
+        let mut filters = Vec::new();
+        let parts: Vec<&str> = input.split_whitespace().collect();
+        
+        let mut i = 0;
+        while i < parts.len() {
+            match parts[i] {
+                "energy" | "consumption" if i + 2 < parts.len() => {
+                    match parts[i + 1] {
+                        ">" | ">=" => {
+                            if let Ok(value) = parts[i + 2].parse::<u32>() {
+                                filters.push(QueryFilter::EnergyGreaterThan(value));
+                            }
+                        }
+                        "<" | "<=" => {
+                            if let Ok(value) = parts[i + 2].parse::<u32>() {
+                                filters.push(QueryFilter::EnergyLessThan(value));
+                            }
+                        }
+                        _ => {}
+                    }
+                    i += 3;
+                }
+                "node" if i + 2 < parts.len() => {
+                    if parts[i + 1] == "=" {
+                        if let Ok(value) = parts[i + 2].parse::<u16>() {
+                            filters.push(QueryFilter::NodeId(value));
+                        }
+                    }
+                    i += 3;
+                }
+                "type" if i + 2 < parts.len() => {
+                    if parts[i + 1] == "=" {
+                        if let Ok(value) = parts[i + 2].parse::<u16>() {
+                            filters.push(QueryFilter::AtomType(value));
+                        }
+                    }
+                    i += 3;
+                }
+                _ => i += 1,
+            }
+        }
+        
+        Ok(Query { filters })
+    }
+    
+    fn matches(&self, atom: &SemanticAtom) -> bool {
+        self.filters.iter().all(|filter| {
+            match filter {
+                QueryFilter::EnergyGreaterThan(threshold) => atom.energy_micro_j > *threshold,
+                QueryFilter::EnergyLessThan(threshold) => atom.energy_micro_j < *threshold,
+                QueryFilter::NodeId(node_id) => atom.node_id == *node_id,
+                QueryFilter::AtomType(atom_type) => atom.atom_type == *atom_type,
+            }
+        })
+    }
+}
 
 // Application state structure
 struct App {
@@ -53,6 +126,12 @@ struct App {
     // UDP listener for real SAMS data
     udp_socket: UdpSocket,
     use_live_data: bool,
+    // Semantic Query System
+    atom_storage: VecDeque<SemanticAtom>,
+    query_mode: bool,
+    query_input: String,
+    current_query: Option<Query>,
+    query_matches: Vec<usize>,
 }
 
 impl App {
@@ -76,6 +155,12 @@ impl App {
             green_efficiency: 0.0,
             udp_socket,
             use_live_data: true, // Start with live data mode
+            // Semantic Query System
+            atom_storage: VecDeque::with_capacity(MAX_STORED_ATOMS),
+            query_mode: false,
+            query_input: String::new(),
+            current_query: None,
+            query_matches: Vec::new(),
         })
     }
 
@@ -84,14 +169,20 @@ impl App {
         
         match self.udp_socket.recv_from(&mut buffer) {
             Ok((bytes_received, _)) if bytes_received == std::mem::size_of::<SemanticAtom>() => {
-                // Parse the received atom
+                // Parse the received atom (32-byte aligned)
                 let atom = unsafe {
                     std::ptr::read(buffer.as_ptr() as *const SemanticAtom)
                 };
                 
+                // Store atom for querying
+                self.atom_storage.push_back(atom);
+                if self.atom_storage.len() > MAX_STORED_ATOMS {
+                    self.atom_storage.pop_front();
+                }
+                
                 // Update energy analytics with real data
                 self.total_sams_atoms_processed += 1;
-                let sams_energy = atom.energy_cost as u64;
+                let sams_energy = atom.energy_micro_j as u64;
                 let json_energy = JSON_ENERGY_PER_ATOM;
                 let savings = json_energy - sams_energy;
                 self.total_energy_saved += savings;
@@ -106,13 +197,19 @@ impl App {
                 };
                 
                 // Add log entry for received atom
-                let trust_status = if atom.trust_pqc { "OK" } else { "WARN" };
-                let message = format!("[ATOM] ID:{} from Node:{} Energy:{}μJ Trust:{}", 
-                    atom.atom_id, atom.source_node, atom.energy_cost, trust_status);
-                self.add_log(&message, trust_status);
+                let node_id = atom.node_id;
+                let energy = atom.energy_micro_j;
+                let atom_type = atom.atom_type;
+                let message = format!("[ATOM] ID:{} from Node:{} Energy:{}μJ Type:{}", 
+                    atom_type, node_id, energy, atom_type);
+                self.add_log(&message, "OK");
                 
-                // Update encryption status based on trust_pqc
-                self.encryption_status = atom.trust_pqc;
+                // Update query matches if filter is active
+                if self.current_query.is_some() {
+                    if let Some(ref query) = self.current_query.clone() {
+                        self.update_query_matches(query);
+                    }
+                }
             }
             Ok(_) => {
                 // No data received or invalid packet size
@@ -223,6 +320,45 @@ impl App {
     fn start_security_scan(&mut self) {
         self.scan_mode = true;
     }
+    
+    fn update_query_matches(&mut self, query: &Query) {
+        self.query_matches.clear();
+        for (i, atom) in self.atom_storage.iter().enumerate() {
+            let node_id = atom.node_id;
+            let energy = atom.energy_micro_j;
+            let atom_type = atom.atom_type;
+            let atom_copy = SemanticAtom {
+                timestamp: atom.timestamp,
+                node_id,
+                atom_type,
+                energy_micro_j: energy,
+                payload: atom.payload,
+            };
+            if query.matches(&atom_copy) {
+                self.query_matches.push(i);
+            }
+        }
+    }
+    
+    fn execute_query(&mut self) {
+        match Query::parse(&self.query_input) {
+            Ok(query) => {
+                self.current_query = Some(query.clone());
+                self.update_query_matches(&query);
+                self.add_log(&format!("[QUERY] Found {} matches for '{}'", self.query_matches.len(), self.query_input), "OK");
+            }
+            Err(e) => {
+                self.add_log(&format!("[QUERY] Parse error: {}", e), "WARN");
+            }
+        }
+    }
+    
+    fn clear_query(&mut self) {
+        self.current_query = None;
+        self.query_matches.clear();
+        self.query_input.clear();
+        self.query_mode = false;
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -248,13 +384,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
                 match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => break,
+                    KeyCode::Char('q') | KeyCode::Esc => {
+                        if app.query_mode {
+                            app.clear_query();
+                        } else {
+                            break;
+                        }
+                    }
                     KeyCode::Char('s') => app.start_security_scan(),
                     KeyCode::Char('e') => app.toggle_encryption_status(),
                     KeyCode::Char('l') => {
                         app.use_live_data = !app.use_live_data;
                         let mode = if app.use_live_data { "LIVE" } else { "SIMULATION" };
                         app.add_log(&format!("[SYSTEM] Switched to {} mode", mode), "INFO");
+                    }
+                    KeyCode::Char('/') => {
+                        app.query_mode = true;
+                        app.query_input.clear();
+                    }
+                    KeyCode::Enter if app.query_mode => {
+                        app.execute_query();
+                    }
+                    KeyCode::Char(c) if app.query_mode => {
+                        app.query_input.push(c);
+                    }
+                    KeyCode::Backspace if app.query_mode => {
+                        app.query_input.pop();
                     }
                     _ => {}
                 }
@@ -288,11 +443,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn render_ui(f: &mut Frame, app: &App, size: Rect, encryption_blink: bool) {
-    // Main layout - split into header, main content, and status
+    // Main layout - split into header, search, main content, and status
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),  // Header
+            Constraint::Length(3),  // Search Bar
             Constraint::Min(0),     // Main content
             Constraint::Length(1),  // Status bar
         ])
@@ -324,6 +480,9 @@ fn render_ui(f: &mut Frame, app: &App, size: Rect, encryption_blink: bool) {
         .block(Block::default().borders(Borders::ALL).border_type(BorderType::Double));
     f.render_widget(encryption_status, header_chunks[1]);
 
+    // Search Bar
+    render_search_bar(f, app, chunks[1]);
+
     // Main content area - split into top (metrics), middle (energy), and bottom (log)
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -332,7 +491,7 @@ fn render_ui(f: &mut Frame, app: &App, size: Rect, encryption_blink: bool) {
             Constraint::Percentage(25), // Energy Analytics
             Constraint::Percentage(40), // Log
         ])
-        .split(chunks[1]);
+        .split(chunks[2]);
 
     // Top section - split into CPU and Memory
     let top_chunks = Layout::default()
@@ -425,33 +584,63 @@ fn render_ui(f: &mut Frame, app: &App, size: Rect, encryption_blink: bool) {
         .style(Style::default().fg(efficiency_color).add_modifier(Modifier::BOLD));
     f.render_widget(efficiency_para, energy_chunks[2]);
 
-    // Bottom section - Encrypted Security Log
+    // Bottom section - Encrypted Security Log (filtered if query active)
     let log_block = Block::default()
-        .title(" ENCRYPTED SECURITY LOG ")
+        .title(if app.current_query.is_some() {
+            format!(" FILTERED LOG ({} matches) ", app.query_matches.len())
+        } else {
+            " ENCRYPTED SECURITY LOG ".to_string()
+        })
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
         .style(Style::default().fg(Color::Green));
     f.render_widget(log_block, main_chunks[2]);
     let log_inner = main_chunks[2].inner(&Margin::new(1, 1));
 
-    // Log entries
-    let log_items: Vec<ListItem> = app.log_entries
-        .iter()
-        .rev()
-        .take(log_inner.height as usize - 2)
-        .map(|entry| {
-            let style = if entry.contains("✓") {
-                Style::default().fg(Color::Green)
-            } else if entry.contains("⚠") {
-                Style::default().fg(Color::Yellow)
-            } else if entry.contains("[ENERGY]") || entry.contains("[SAVED]") || entry.contains("[GREEN]") {
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::DarkGray)
-            };
-            ListItem::new(entry.as_str()).style(style)
-        })
-        .collect();
+    // Log entries (filtered or all)
+    let log_items: Vec<ListItem> = if app.current_query.is_some() {
+        // Show only matching atoms
+        app.query_matches
+            .iter()
+            .rev()
+            .take(log_inner.height as usize - 2)
+            .filter_map(|&index| {
+                app.atom_storage.get(index).map(|atom| {
+                    let node_id = atom.node_id;
+                    let energy = atom.energy_micro_j;
+                    let atom_type = atom.atom_type;
+                    let timestamp = chrono::DateTime::from_timestamp(atom.timestamp as i64, 0)
+                        .map(|dt| dt.format("%H:%M:%S").to_string())
+                        .unwrap_or_else(|| "UNKNOWN".to_string());
+                    let message = format!("[{}] [ATOM] Node:{} Energy:{}μJ Type:{}", 
+                        timestamp, node_id, energy, atom_type);
+                    let style = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
+                    ListItem::new(message).style(style)
+                })
+            })
+            .collect()
+    } else {
+        // Show all log entries
+        app.log_entries
+            .iter()
+            .rev()
+            .take(log_inner.height as usize - 2)
+            .map(|entry| {
+                let style = if entry.contains("✓") {
+                    Style::default().fg(Color::Green)
+                } else if entry.contains("⚠") {
+                    Style::default().fg(Color::Yellow)
+                } else if entry.contains("[ENERGY]") || entry.contains("[SAVED]") || entry.contains("[GREEN]") {
+                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+                } else if entry.contains("[QUERY]") {
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                };
+                ListItem::new(entry.as_str()).style(style)
+            })
+            .collect()
+    };
 
     let log_list = List::new(log_items)
         .style(Style::default().fg(Color::Green));
@@ -459,9 +648,34 @@ fn render_ui(f: &mut Frame, app: &App, size: Rect, encryption_blink: bool) {
 
     // Status bar
     let mode_text = if app.use_live_data { "LIVE" } else { "SIM" };
-    let status_text = format!(" [q] Quit | [s] Scan | [e] Encrypt | [l] Mode: {} ", mode_text);
+    let query_status = if app.current_query.is_some() {
+        format!(" | Found {} matches for '{}'", app.query_matches.len(), app.query_input)
+    } else {
+        String::new()
+    };
+    let status_text = format!(" [q] Quit | [s] Scan | [e] Encrypt | [l] Mode: {} [/] Search{} ", mode_text, query_status);
     let status = Paragraph::new(status_text)
         .style(Style::default().fg(Color::DarkGray))
         .block(Block::default().borders(Borders::ALL).border_type(BorderType::Double));
-    f.render_widget(status, chunks[2]);
+    f.render_widget(status, chunks[3]);
+}
+
+fn render_search_bar(f: &mut Frame, app: &App, area: Rect) {
+    let search_text = if app.query_mode {
+        format!("Search: {}_", app.query_input)
+    } else if app.current_query.is_some() {
+        format!("Filter active: '{}' (Esc to clear)", app.query_input)
+    } else {
+        "Press '/' to search atoms".to_string()
+    };
+    
+    let search_color = if app.query_mode { Color::Yellow } else { Color::Cyan };
+    let search_widget = Paragraph::new(search_text)
+        .style(Style::default().fg(search_color))
+        .block(Block::default()
+            .title(" SEMANTIC QUERY ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Yellow)));
+    
+    f.render_widget(search_widget, area);
 }

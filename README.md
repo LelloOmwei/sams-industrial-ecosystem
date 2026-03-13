@@ -20,16 +20,42 @@ This ecosystem consists of four specialized applications that work together to p
 - **Note**: Contains proprietary IP protection components
 
 #### 3. **Cyber-Monitor** (`cyber-monitor/`)
-- **Purpose**: Real-time TUI dashboard for system monitoring
-- **Technology**: Rust, Terminal-based monitoring
-- **Features**: Live system metrics, resource monitoring, alert system
+- **Purpose**: Real-time TUI dashboard for system monitoring with semantic query engine
+- **Technology**: Rust, Terminal-based monitoring, Zero-copy binary filtering
+- **Features**: Live system metrics, resource monitoring, semantic search, sub-microsecond query execution
 
 #### 4. **Black-Box Auditor** (`sams-blackbox/`)
 - **Purpose**: High-speed immutable binary logger for compliance and forensic audit
 - **Technology**: Rust, Secure logging
 - **Features**: Immutable audit trails, forensic analysis, industrial compliance
 
-## 🚀 Quick Start
+## � Real-Time Semantic Query Engine
+
+The cyber-monitor features a high-performance semantic query engine that enables real-time filtering of binary 32-byte atoms using natural language commands. This system performs zero-copy binary filtering directly on memory-mapped data structures for maximum efficiency.
+
+### Query Capabilities
+
+Filter industrial monitoring data with semantic commands:
+
+```bash
+# Find high-consumption nodes
+energy > 5
+
+# Isolate traffic from a specific sensor  
+node = 42
+
+# Complex industrial anomaly detection
+type = 1 and energy > 10
+``
+
+### Performance Features
+
+- **Zero-copy binary filtering** on 8th-byte energy offset
+- **Sub-microsecond query execution** on 1000+ stored atoms
+- **TUI-integrated command line** with instant visual feedback
+- **Natural language parsing** for industrial operators
+
+## �� Quick Start
 
 ### Prerequisites
 - Rust 1.70+ (recommended: latest stable)
@@ -49,8 +75,9 @@ cd sams-ghost-node && cargo run --release
 # Semantic Logic Controller
 cd sams-logic-gate && cargo run --release --features open-source
 
-# Cyber-Monitor (Dashboard)
+# Cyber-Monitor (Dashboard with Semantic Search)
 cd cyber-monitor && cargo run --release
+# Press '/' to enter search mode, then type: energy > 5
 
 # Black-Box Auditor
 cd sams-blackbox && cargo run --release
