@@ -1,0 +1,13 @@
+[package]
+name = "sams-ghost-node"
+version = "0.1.0"
+edition = "2021"
+authors = ["Stanislav Levarsky"]
+description = "SAMS Ghost-Node - Industrial sensor data generator for Industry 4.0 with microjoule energy tracking and sub-microsecond latency"
+
+[dependencies]
+ratatui = "0.26"
+crossterm = "0.27"
+rand = "0.8"
+clap = { version = "4.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }

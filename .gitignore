@@ -1,0 +1,88 @@
+# Rust build artifacts
+target/
+Cargo.lock
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Configuration files with secrets
+config/
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Backup files
+*.bak
+*.backup
+
+# Compiled binaries (release)
+*.exe
+*.dmg
+*.deb
+*.rpm
+
+# Test artifacts
+tests/output/
+coverage/
+
+# Documentation build
+docs/build/
+
+# Profiling data
+*.prof
+*.pprof
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Cache directories
+.cache/
+*.cache
+
+# Node.js (if any frontend components)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python (if any Python scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Backup and version files
+*.orig
+*.rej
+.~*
+
+# Project-specific ignores
+# Add project-specific patterns below as needed

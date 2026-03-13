@@ -1,0 +1,121 @@
+# SAMS Logic-Gate - Git Ignore Configuration
+# Protects proprietary intellectual property and excludes build artifacts
+
+# Build artifacts and dependencies
+target/
+Cargo.lock
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Operating system files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# Test and coverage files
+*.prof
+*.gcov
+*.gcda
+*.gcno
+coverage/
+lcov.info
+
+# Rust specific
+**/*.rs.bk
+rust-toolchain
+
+# PROTECTION: Proprietary binary blobs (CRITICAL IP PROTECTION)
+proprietary_blobs/
+*.samslib
+*.samsbin
+*.proprietary
+*.commercial
+*.binary
+
+# License and authentication files
+license.key
+*.license
+*.cert
+*.key
+*.pem
+*.crt
+license-validation/
+
+# Performance and profiling files
+*.profraw
+*.profdata
+*.perf
+*.trace
+benchmark-results/
+
+# Security and encryption
+*.gpg
+*.pgp
+*.asc
+*.sig
+security-scan/
+
+# Configuration overrides
+.cargo/config.local.toml
+*.env
+*.env.local
+*.env.production
+
+# Documentation build artifacts
+book/
+docs/build/
+site/
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+*.rej
+
+# Distribution artifacts
+*.tar.gz
+*.zip
+*.7z
+*.deb
+*.rpm
+*.msi
+*.dmg
+
+# SAMS specific proprietary files
+sams-*.proprietary
+sams-*.commercial
+sams-*.binary
+sams-config.*
+
+# Export control compliance
+export-control/
+
+# Custom development files
+dev-*
+test-proprietary/
+mock-proprietary/

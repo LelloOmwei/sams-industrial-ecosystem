@@ -1,0 +1,5 @@
+# Local cargo config for sams-logic-gate
+# Overrides workspace ESP32 configuration for this project only
+
+[build]
+target = "x86_64-apple-darwin"

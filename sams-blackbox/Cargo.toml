@@ -1,0 +1,11 @@
+[package]
+name = "sams-blackbox"
+version = "0.1.0"
+edition = "2024"
+authors = ["Stanislav Levarsky"]
+description = "SAMS Black-Box Auditor - High-speed immutable binary logger for industrial compliance and forensic audit trails"
+
+[dependencies]
+ratatui = "0.28"
+crossterm = "0.28"
+tokio = { version = "1.0", features = ["full"] }
