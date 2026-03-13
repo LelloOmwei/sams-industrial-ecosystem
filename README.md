@@ -1,6 +1,6 @@
 # SAMS Industrial Ecosystem
 
-A comprehensive monorepo containing the core SAMS (Semantic Adaptive Manufacturing System) applications for Industry 4.0 industrial automation and monitoring.
+A comprehensive monorepo containing the core SAMS (Semantic Atom Monitoring System) applications for Industry 4.0 industrial automation and monitoring.
 
 ## 🏗️ Architecture Overview
 
@@ -106,17 +106,17 @@ Contributions are welcome for open-source components. Please refer to individual
 
 ## 📞 Support
 
-For licensing information and commercial support:
-- **Email**: licensing@sams-technology.com
-- **Web**: https://sams-technology.com/licensing
+For project information and support:
+- **Email**: StanoL76@protonmail.com
 
-## 🏢 About SAMS Technology
+## 🏢 About SAMS
 
-SAMS Technology provides industrial automation solutions with focus on:
-- Semantic reasoning and AI integration
-- Energy-efficient sensor networks
-- Real-time monitoring and control
-- Compliance and audit trail management
+**SAMS** (Semantic Atom Monitoring System) is an industrial monitoring ecosystem focused on:
+
+- **32-byte binary protocol**: Efficient data transmission for industrial sensors
+- **Energy-efficient monitoring**: Microjoule-level energy tracking and optimization
+- **Real-time semantic processing**: Advanced pattern recognition and intervention logic
+- **Industrial compliance**: Immutable audit trails and forensic analysis
 
 ---
 
